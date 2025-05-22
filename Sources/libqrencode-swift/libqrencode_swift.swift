@@ -15,26 +15,46 @@ import Foundation
 import libqrencode
 import pngconvert
 
+public enum QREncodeSwiftResult: Int32 {
+    case success = 0
+    case fileError = -1
+    case memoryError = -2
+    case initError = -3
+    case writeError = -4
+    case unexpectedString = -5000
+    case noQrCode = -5001
+    case unknownError = -5002
+}
+
 public class QREncodeSwift {
-    public enum QRErrorLevel:UInt32 {case low=0, middle, high, max}
-    public static func qr(from:String, level:QRErrorLevel = .middle, outputFileName:String = "qr.png", colorComponents:[Int]? = nil, caseSensivity:Bool = true) -> Bool {
-        guard let cQRStr = from.cString(using: .ascii)
-            else {return false}
+    public enum QRErrorLevel: UInt32 {
+        case low=0, middle, high, max
+    }
+    public static func qr(
+        from: String,
+        level: QRErrorLevel = .middle,
+        outputFileName:String = "qr.png",
+        colorComponents: [Int]? = nil,
+        caseSensivity:Bool = true
+    ) -> QREncodeSwiftResult {
+        guard let cQRStr = from.cString(using: .ascii) else { return .unexpectedString }
         let output = FileManager.default.fileSystemRepresentation(withPath: outputFileName)
 
-        let qrcode = QRcode_encodeString(cQRStr, 0, QRecLevel.init(level.rawValue), QRencodeMode.init(2), caseSensivity ? Int32(1):Int32(0))
-        var result = false
+        let qrCode = QRcode_encodeString(cQRStr, 0, QRecLevel.init(level.rawValue), QRencodeMode.init(2), caseSensivity ? Int32(1):Int32(0))
+        let result: QREncodeSwiftResult
 
-        if let qr = qrcode {
-            if let colors = colorComponents {
-                if writePNG(qrcode, output, makeByte(from: colors.cColorComponents)) == 0 {
-                    result = true
-                }
-            } else if writePNG(qr, output, nil) == 0 {
-                result = true
-            }
+        guard let qrCode else {
+            return .noQrCode
         }
-        qrcode?.deallocate()
+
+        let rawResult: Int32
+        if let colors = colorComponents {
+            rawResult = writePNG(qrCode, output, makeByte(from: colors.cColorComponents))
+        } else {
+            rawResult = writePNG(qrCode, output, nil)
+        }
+        result = QREncodeSwiftResult(rawValue: rawResult) ?? .unknownError
+        qrCode.deallocate()
         return result
     }
 

@@ -31,69 +31,70 @@ static void fillRow(unsigned char *row, int num, const unsigned char color[])
     }
 }
 
+#define PNG_OK 0
+#define PNG_ERROR_FILE -1
+#define PNG_ERROR_MEMORY -2
+#define PNG_ERROR_INIT -3
+#define PNG_ERROR_WRITE -4
+
  int writePNG(const QRcode *qrcode, const char *outfile, unsigned char fg_color[4])
 {
     if(fg_color == NULL) {
         fg_color = gfg_color;
     }
-    static FILE *fp; // avoid clobbering by setjmp.
+    FILE *fp;
     int type = PNG32_TYPE;
-    png_structp png_ptr;
-    png_infop info_ptr;
+    png_structp png_ptr = NULL;
+    png_infop info_ptr = NULL;
     png_colorp palette = NULL;
     png_byte alpha_values[2];
-    unsigned char *row, *p, *q;
+    unsigned char *row = NULL, *p, *q;
     int x, y, xx, yy, bit;
     int realwidth;
 
     realwidth = (qrcode->width + margin * 2) * size;
-    if(type == PNG_TYPE) {
-        row = (unsigned char *)malloc((size_t)((realwidth + 7) / 8));
-    } else if(type == PNG32_TYPE) {
-        row = (unsigned char *)malloc((size_t)realwidth * 4);
-    } else {
-        fprintf(stderr, "Internal error.\n");
-        exit(EXIT_FAILURE);
-    }
-    if(row == NULL) {
-        fprintf(stderr, "Failed to allocate memory.\n");
-        exit(EXIT_FAILURE);
-    }
+    row = (type == PNG_TYPE) ? malloc((size_t)((realwidth + 7) / 8))
+                             : malloc((size_t)realwidth * 4);
+    if(row == NULL) return PNG_ERROR_MEMORY;
 
     if(outfile[0] == '-' && outfile[1] == '\0') {
         fp = stdout;
     } else {
         fp = fopen(outfile, "wb");
         if(fp == NULL) {
-            fprintf(stderr, "Failed to create file: %s\n", outfile);
-            perror(NULL);
-            exit(EXIT_FAILURE);
+            free(row);
+            return PNG_ERROR_FILE;
         }
     }
 
     png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
     if(png_ptr == NULL) {
-        fprintf(stderr, "Failed to initialize PNG writer.\n");
-        exit(EXIT_FAILURE);
+        fclose(fp);
+        free(row);
+        return PNG_ERROR_INIT;
     }
 
     info_ptr = png_create_info_struct(png_ptr);
     if(info_ptr == NULL) {
-        fprintf(stderr, "Failed to initialize PNG write.\n");
-        exit(EXIT_FAILURE);
+        png_destroy_write_struct(&png_ptr, NULL);
+        fclose(fp);
+        free(row);
+        return PNG_ERROR_INIT;
     }
 
     if(setjmp(png_jmpbuf(png_ptr))) {
         png_destroy_write_struct(&png_ptr, &info_ptr);
-        fprintf(stderr, "Failed to write PNG image.\n");
-        exit(EXIT_FAILURE);
+        fclose(fp);
+        free(row);
+        free(palette);
+        return PNG_ERROR_WRITE;
     }
 
     if(type == PNG_TYPE) {
         palette = (png_colorp) malloc(sizeof(png_color) * 2);
         if(palette == NULL) {
             fprintf(stderr, "Failed to allocate memory.\n");
-            exit(EXIT_FAILURE);
+            return PNG_ERROR_MEMORY;
         }
         palette[0].red   = fg_color[0];
         palette[0].green = fg_color[1];
@@ -202,5 +203,5 @@ static void fillRow(unsigned char *row, int num, const unsigned char color[])
     free(row);
     free(palette);
 
-    return 0;
+    return PNG_OK;
 }
